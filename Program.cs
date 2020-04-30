@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -42,20 +43,50 @@ namespace chess.com.downloader
         }
         private static async Task DownloadGamesFor(string user,HttpClient client,string uri)
         {
-            Log.Information($"downloading from url {uri}");
-            var games = await JsonSerializer.DeserializeAsync<GamesRoot>( await client.GetStreamAsync(uri));
-            Log.Information($"{games.Games.Length} games found so far...");
-            
-            var savingTasks = games.Games.Select(t=>{
-                var path = Path.Combine(savePath,Path.GetFileName(t.Url));
-                Log.Information($"trying to save game in:{path}");
-                using ( var fs = new FileStream(path,FileMode.CreateNew,FileAccess.ReadWrite) )
-                using( var sr = new StreamWriter(fs))
-                {
-                    return sr.WriteAsync(t.Pgn);
+            Stream stream;
+            for(;;)
+            {
+                try{
+                    stream = await client.GetStreamAsync(uri);
+                    break;
                 }
+                catch(HttpRequestException e)
+                {
+                    if(e.Message.Contains("Too Many"))
+                        await Task.Delay(20000);
+                    else
+                        throw;
+                }
+            }
+
+            Log.Information($"downloading from url {uri}");
+            var games = await JsonSerializer.DeserializeAsync<GamesRoot>( stream);
+            Log.Information($"{games.Games.Length} games found so far...");
+            List<FileStream> opened = new List<FileStream>();
+            List<StreamWriter> writers = new List<StreamWriter>();
+            var savingTasks = games.Games.Select(t=>{
+                var path = Path.ChangeExtension(Path.Combine(savePath,Path.GetFileName(t.Url)),"pgn");
+                Log.Information($"trying to save game in:{path}");
+                var fs = new FileStream(path,FileMode.CreateNew,FileAccess.ReadWrite);
+                opened.Add(fs);
+                var sr = new StreamWriter(fs);
+                writers.Add(sr);
+                var tsk =  sr.WriteAsync(t.Pgn);
+                return tsk;
             });
-            await Task.WhenAll(savingTasks);
+            try{
+                await Task.WhenAll(savingTasks);
+                var flushing = writers.Select(u=>u.FlushAsync());
+                await Task.WhenAll(flushing);
+            }
+            catch(Exception e)
+            {
+                Log.Fatal($"Cannot write to file:{e}");
+                throw e;
+            }
+            finally{
+                opened.ForEach(s => s.Close());
+            }
         }
     }
 }

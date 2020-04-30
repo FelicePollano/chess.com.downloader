@@ -11,7 +11,7 @@ namespace chess.com.downloader
     {
         [JsonPropertyName("url")]
         public string Url { get; set; }
-        [JsonPropertyName("Pgn")]
+        [JsonPropertyName("pgn")]
         public string Pgn { get; set; }
     }
 }
