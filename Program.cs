@@ -64,28 +64,23 @@ namespace chess.com.downloader
             Log.Information($"{games.Games.Length} games found so far...");
             List<FileStream> opened = new List<FileStream>();
             List<StreamWriter> writers = new List<StreamWriter>();
-            var savingTasks = games.Games.Select(t=>{
+            var savingTasks = games.Games.Select( async t=> {
                 var path = Path.ChangeExtension(Path.Combine(savePath,Path.GetFileName(t.Url)),"pgn");
                 Log.Information($"trying to save game in:{path}");
-                var fs = new FileStream(path,FileMode.CreateNew,FileAccess.ReadWrite);
-                opened.Add(fs);
-                var sr = new StreamWriter(fs);
-                writers.Add(sr);
-                var tsk =  sr.WriteAsync(t.Pgn);
-                return tsk;
+                using(var fs = new FileStream(path,FileMode.CreateNew,FileAccess.ReadWrite,FileShare.None,2048,true))
+                using(var sr = new StreamWriter(fs))
+                {
+                    await sr.WriteAsync(t.Pgn);
+                }
+                Log.Information($"{path} saved.");
             });
             try{
                 await Task.WhenAll(savingTasks);
-                var flushing = writers.Select(u=>u.FlushAsync());
-                await Task.WhenAll(flushing);
             }
             catch(Exception e)
             {
                 Log.Fatal($"Cannot write to file:{e}");
-                throw e;
-            }
-            finally{
-                opened.ForEach(s => s.Close());
+                throw;
             }
         }
     }
